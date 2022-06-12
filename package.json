@@ -1,0 +1,17 @@
+{
+  "name": "pdf-scraping",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^0.27.2",
+    "pdf-page-counter": "^1.0.3",
+    "pdfjs-dist": "^2.14.305",
+    "puppeteer": "^14.3.0",
+    "puppeteer-extra": "^3.2.3",
+    "puppeteer-extra-plugin-stealth": "^2.9.0"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.16"
+  }
+}
