@@ -10,7 +10,7 @@ const search = "Agonia do Eros";
 const baseUrl = "https://google.com";
 const searchFor = `${search} filetype:pdf`;
 
-const pages = 96;
+const pages = 146;
 
 function getNameFromPath(url) {
   const splittedPath = url.split("/").filter(Boolean);
@@ -20,26 +20,15 @@ function getNameFromPath(url) {
   return name.includes(".pdf") ? name : `${name}.pdf`;
 }
 
-(async () => {
-  const browser = await pup.launch({
-    ignoreHTTPSErrors: true,
-    headless: true,
-  });
-  const page = await browser.newPage();
-
-  await page.goto(baseUrl);
-
-  await page.type('input[name="q"]', searchFor);
-  await page.click('input[name="q"]');
-
-  await Promise.all([page.waitForNavigation(), page.keyboard.press("Enter")]);
-
-  const pdfs = await page.$$eval("div.g a", (el) =>
+async function getAllLinks(page) {
+  return await page.$$eval("div.g a", (el) =>
     el
       .map((link) => link.href)
       .filter((href) => href && !href.includes("google.com"))
   );
+}
 
+async function downloadPdfs(pdfs) {
   for (const pdf of pdfs) {
     try {
       const response = await axios.get(pdf, {
@@ -53,32 +42,81 @@ function getNameFromPath(url) {
         response.data.pipe(fs.createWriteStream(`./temp/${filename}`));
       }
     } catch (error) {
-      console.log(`❗ERRO: Não foi possível acessar o link ${pdf}`);
+      //
     }
   }
+}
+
+async function removeFiles(files, folder) {
+  for (const file of files) {
+    try {
+      const data = await pdf(file.file);
+
+      if (data.numpages < pages - (pages * 30) / 100) {
+        fs.rmSync(`${folder}/${file.name}`, {
+          force: true,
+        });
+      }
+    } catch (error) {
+      console.log(`❗ERRO: Ocorreu um erro no arquivo ${pdf.name}`);
+    }
+  }
+}
+
+(async () => {
+  let pageCount = 1;
+
+  const browser = await pup.launch({
+    ignoreHTTPSErrors: true,
+    headless: true,
+  });
+  const page = await browser.newPage();
+
+  await page.goto(baseUrl);
+  await page.type('input[name="q"]', searchFor);
+  await page.click('input[name="q"]');
+
+  await Promise.all([page.waitForNavigation(), page.keyboard.press("Enter")]);
+
+  const pdfs = await getAllLinks(page);
+
+  await downloadPdfs(pdfs);
 
   const pdfsFolder = "./temp";
 
-  const tempFiles = [];
+  let tempFiles = [];
 
   fs.readdirSync(pdfsFolder).forEach((file) => {
     const dataBuffer = fs.readFileSync(`${pdfsFolder}/${file}`);
     tempFiles.push({ file: dataBuffer, name: file });
   });
 
-  for (const file of tempFiles) {
-    try {
-      const data = await pdf(file.file);
+  await removeFiles(tempFiles, pdfsFolder);
 
-      if (data.numpages < pages - (pages * 30) / 100) {
-        fs.rmSync(`${pdfsFolder}/${file.name}`, {
-          force: true,
-        });
-      }
-    } catch (error) {
-      console.log(`❗ERRO: Ocorreu um erro no arquivo ${file.name}`);
-    }
+  if (fs.readdirSync(pdfsFolder).length > 0) {
+    await browser.close();
+    return;
   }
+
+  const nextPage = await page.$eval(
+    "a.fl[aria-label='Page 2']",
+    (el) => el.href
+  );
+
+  await page.goto(nextPage);
+
+  const pdfsNextPage = await getAllLinks(page);
+
+  await downloadPdfs(pdfsNextPage);
+
+  tempFiles = [];
+
+  fs.readdirSync(pdfsFolder).forEach((file) => {
+    const dataBuffer = fs.readFileSync(`${pdfsFolder}/${file}`);
+    tempFiles.push({ file: dataBuffer, name: file });
+  });
+
+  await removeFiles(tempFiles, pdfsFolder);
 
   await browser.close();
 })();
