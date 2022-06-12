@@ -6,11 +6,12 @@ const pdf = require("pdf-page-counter");
 
 pup.use(StealthPlugin());
 
-const search = "Agonia do Eros";
+const args = process.argv.slice(2);
+
+const search = args[0];
 const baseUrl = "https://google.com";
 const searchFor = `${search} filetype:pdf`;
-
-const pages = 96;
+const pages = args[1];
 
 function getNameFromPath(url) {
   const splittedPath = url.split("/").filter(Boolean);
@@ -34,11 +35,15 @@ function getNameFromPath(url) {
 
   await Promise.all([page.waitForNavigation(), page.keyboard.press("Enter")]);
 
+  console.log(`🔎 Buscando por PDFS`);
+
   const pdfs = await page.$$eval("div.g a", (el) =>
     el
       .map((link) => link.href)
       .filter((href) => href && !href.includes("google.com"))
   );
+
+  console.log(`🔎 PDFS Encontrados, iniciando download`);
 
   for (const pdf of pdfs) {
     try {
@@ -50,10 +55,12 @@ function getNameFromPath(url) {
       if (response.headers["content-type"] === "application/pdf") {
         const filename = getNameFromPath(response.request.path);
 
+        console.log(`✅ ${filename}: download concluído`);
+
         response.data.pipe(fs.createWriteStream(`./temp/${filename}`));
       }
     } catch (error) {
-      console.log(`❗ERRO: Não foi possível acessar o link ${pdf}`);
+      //
     }
   }
 
@@ -61,7 +68,15 @@ function getNameFromPath(url) {
 
   const tempFiles = [];
 
-  fs.readdirSync(pdfsFolder).forEach((file) => {
+  const totalFiles = fs.readdirSync(pdfsFolder);
+
+  console.log(
+    `🔎 Foram encontrados ${totalFiles.length} pdfs, iniciando validação dos arquivos`
+  );
+
+  totalFiles.forEach((file) => {
+    console.log(`❌ ${file} inválido`);
+
     const dataBuffer = fs.readFileSync(`${pdfsFolder}/${file}`);
     tempFiles.push({ file: dataBuffer, name: file });
   });
@@ -78,6 +93,10 @@ function getNameFromPath(url) {
     } catch (error) {
       console.log(`❗ERRO: Ocorreu um erro no arquivo ${file.name}`);
     }
+  }
+
+  if (fs.readdirSync(pdfsFolder).length === 0) {
+    console.log("😔 Nenhum válido foi encontrado");
   }
 
   await browser.close();
