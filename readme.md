@@ -16,6 +16,9 @@ $ cd pdf-scraping
 Para iniciá-lo, siga os passos abaixo:
 
 ```bash
+# Criar a pasta que armazena os arquivos
+$ mkdir temp
+
 # Instalar as dependências
 $ yarn
 
