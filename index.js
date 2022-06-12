@@ -1,27 +1,38 @@
 const pup = require("puppeteer-extra");
 const StealthPlugin = require("puppeteer-extra-plugin-stealth");
-const axios = require("axios").default;
 const fs = require("fs");
-const pdf = require("pdf-page-counter");
+
+const {
+  downloadPdfs,
+  getAllLinks,
+  removeFiles,
+  getAllFiles,
+  messagesHandler,
+} = require("./utils.js");
 
 pup.use(StealthPlugin());
 
 const args = process.argv.slice(2);
 
 const search = args[0];
-const baseUrl = "https://google.com";
-const searchFor = `${search} filetype:pdf`;
-const pages = args[1];
+const pages = Number(args[1] || 1);
 
-function getNameFromPath(url) {
-  const splittedPath = url.split("/").filter(Boolean);
-
-  const name = splittedPath[splittedPath.length - 1];
-
-  return name.includes(".pdf") ? name : `${name}.pdf`;
+if (!search) {
+  throw new Error("Você precisa passar algum objeto de pesquisa");
 }
 
+if (typeof pages !== "number") {
+  throw new Error(
+    "Valor inválido para o argumento 'pages', por favor, passe um número."
+  );
+}
+
+const baseUrl = "https://google.com";
+const searchFor = `${search} filetype:pdf`;
+
 (async () => {
+  let pageCount = 1;
+
   const browser = await pup.launch({
     ignoreHTTPSErrors: true,
     headless: true,
@@ -29,70 +40,69 @@ function getNameFromPath(url) {
   const page = await browser.newPage();
 
   await page.goto(baseUrl);
-
   await page.type('input[name="q"]', searchFor);
   await page.click('input[name="q"]');
 
   await Promise.all([page.waitForNavigation(), page.keyboard.press("Enter")]);
 
-  console.log(`🔎 Buscando por PDFS`);
+  const pdfs = await getAllLinks(page);
 
-  const pdfs = await page.$$eval("div.g a", (el) =>
-    el
-      .map((link) => link.href)
-      .filter((href) => href && !href.includes("google.com"))
-  );
-
-  console.log(`🔎 PDFS Encontrados, iniciando download`);
-
-  for (const pdf of pdfs) {
-    try {
-      const response = await axios.get(pdf, {
-        responseType: "stream",
-        timeout: 1000 * 30,
-      });
-
-      if (response.headers["content-type"] === "application/pdf") {
-        const filename = getNameFromPath(response.request.path);
-
-        console.log(`✅ ${filename}: download concluído`);
-
-        response.data.pipe(fs.createWriteStream(`./temp/${filename}`));
-      }
-    } catch (error) {
-      //
-    }
-  }
+  await downloadPdfs(pdfs);
 
   const pdfsFolder = "./temp";
 
-  const tempFiles = [];
+  let tempFiles = [];
 
-  const totalFiles = fs.readdirSync(pdfsFolder);
+  let allFiles = getAllFiles();
 
-  console.log(
-    `🔎 Foram encontrados ${totalFiles.length} pdfs, iniciando validação dos arquivos`
-  );
-
-  totalFiles.forEach((file) => {
-    console.log(`❌ ${file} inválido`);
-
+  allFiles.forEach((file) => {
     const dataBuffer = fs.readFileSync(`${pdfsFolder}/${file}`);
     tempFiles.push({ file: dataBuffer, name: file });
   });
 
-  for (const file of tempFiles) {
-    try {
-      const data = await pdf(file.file);
+  await removeFiles({ files: tempFiles, folder: pdfsFolder, pages });
 
-      if (data.numpages < pages - (pages * 30) / 100) {
-        fs.rmSync(`${pdfsFolder}/${file.name}`, {
-          force: true,
-        });
-      }
-    } catch (error) {
-      console.log(`❗ERRO: Ocorreu um erro no arquivo ${file.name}`);
+  if (fs.readdirSync(pdfsFolder).length > 0) {
+    messagesHandler.success("Busca concluída", true);
+    await browser.close();
+    return;
+  }
+
+  while (pageCount < 10) {
+    messagesHandler.error(
+      ` Nenhum arquivo válido encontrado na página ${pageCount}, passando para a próxima`,
+      true
+    );
+
+    const nextPage = await page.$eval(
+      `a.fl[aria-label='Page ${pageCount + 1}']`,
+      (el) => el.href
+    );
+
+    await page.goto(nextPage);
+
+    const pdfsNextPage = await getAllLinks(page);
+
+    await downloadPdfs(pdfsNextPage);
+
+    tempFiles = [];
+
+    allFiles = getAllFiles();
+
+    allFiles.forEach((file) => {
+      const dataBuffer = fs.readFileSync(`${pdfsFolder}/${file}`);
+      tempFiles.push({ file: dataBuffer, name: file });
+    });
+
+    await removeFiles({ files: tempFiles, folder: pdfsFolder, pages });
+
+    if (fs.readdirSync(pdfsFolder).length > 0) {
+      messagesHandler.success("Busca concluída", true);
+      await browser.close();
+      return;
     }
+
+    pageCount++;
   }
 
   if (fs.readdirSync(pdfsFolder).length === 0) {
