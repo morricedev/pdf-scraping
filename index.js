@@ -1,67 +1,34 @@
 const pup = require("puppeteer-extra");
 const StealthPlugin = require("puppeteer-extra-plugin-stealth");
-const axios = require("axios").default;
 const fs = require("fs");
-const pdf = require("pdf-page-counter");
+
+const {
+  downloadPdfs,
+  getAllLinks,
+  removeFiles,
+  getAllFiles,
+  messagesHandler,
+} = require("./utils.js");
 
 pup.use(StealthPlugin());
 
-const search = "Agonia do Eros";
-const baseUrl = "https://google.com";
-const searchFor = `${search} filetype:pdf`;
+const args = process.argv.slice(2);
 
-const pages = 146;
+const search = args[0];
+const pages = Number(args[1] || 1);
 
-function getNameFromPath(url) {
-  const splittedPath = url.split("/").filter(Boolean);
-
-  const name = splittedPath[splittedPath.length - 1];
-
-  return name.includes(".pdf") ? name : `${name}.pdf`;
+if (!search) {
+  throw new Error("Você precisa passar algum objeto de pesquisa");
 }
 
-async function getAllLinks(page) {
-  return await page.$$eval("div.g a", (el) =>
-    el
-      .map((link) => link.href)
-      .filter((href) => href && !href.includes("google.com"))
+if (typeof pages !== "number") {
+  throw new Error(
+    "Valor inválido para o argumento 'pages', por favor, passe um número."
   );
 }
 
-async function downloadPdfs(pdfs) {
-  for (const pdf of pdfs) {
-    try {
-      const response = await axios.get(pdf, {
-        responseType: "stream",
-        timeout: 1000 * 30,
-      });
-
-      if (response.headers["content-type"] === "application/pdf") {
-        const filename = getNameFromPath(response.request.path);
-
-        response.data.pipe(fs.createWriteStream(`./temp/${filename}`));
-      }
-    } catch (error) {
-      //
-    }
-  }
-}
-
-async function removeFiles(files, folder) {
-  for (const file of files) {
-    try {
-      const data = await pdf(file.file);
-
-      if (data.numpages < pages - (pages * 30) / 100) {
-        fs.rmSync(`${folder}/${file.name}`, {
-          force: true,
-        });
-      }
-    } catch (error) {
-      console.log(`❗ERRO: Ocorreu um erro no arquivo ${pdf.name}`);
-    }
-  }
-}
+const baseUrl = "https://google.com";
+const searchFor = `${search} filetype:pdf`;
 
 (async () => {
   let pageCount = 1;
@@ -86,37 +53,57 @@ async function removeFiles(files, folder) {
 
   let tempFiles = [];
 
-  fs.readdirSync(pdfsFolder).forEach((file) => {
+  let allFiles = getAllFiles();
+
+  allFiles.forEach((file) => {
     const dataBuffer = fs.readFileSync(`${pdfsFolder}/${file}`);
     tempFiles.push({ file: dataBuffer, name: file });
   });
 
-  await removeFiles(tempFiles, pdfsFolder);
+  await removeFiles({ files: tempFiles, folder: pdfsFolder, pages });
 
   if (fs.readdirSync(pdfsFolder).length > 0) {
+    messagesHandler.success("Busca concluída", true);
     await browser.close();
     return;
   }
 
-  const nextPage = await page.$eval(
-    "a.fl[aria-label='Page 2']",
-    (el) => el.href
-  );
+  while (pageCount < 10) {
+    messagesHandler.error(
+      ` Nenhum arquivo válido encontrado na página ${pageCount}, passando para a próxima`,
+      true
+    );
 
-  await page.goto(nextPage);
+    const nextPage = await page.$eval(
+      `a.fl[aria-label='Page ${pageCount + 1}']`,
+      (el) => el.href
+    );
 
-  const pdfsNextPage = await getAllLinks(page);
+    await page.goto(nextPage);
 
-  await downloadPdfs(pdfsNextPage);
+    const pdfsNextPage = await getAllLinks(page);
 
-  tempFiles = [];
+    await downloadPdfs(pdfsNextPage);
 
-  fs.readdirSync(pdfsFolder).forEach((file) => {
-    const dataBuffer = fs.readFileSync(`${pdfsFolder}/${file}`);
-    tempFiles.push({ file: dataBuffer, name: file });
-  });
+    tempFiles = [];
 
-  await removeFiles(tempFiles, pdfsFolder);
+    allFiles = getAllFiles();
+
+    allFiles.forEach((file) => {
+      const dataBuffer = fs.readFileSync(`${pdfsFolder}/${file}`);
+      tempFiles.push({ file: dataBuffer, name: file });
+    });
+
+    await removeFiles({ files: tempFiles, folder: pdfsFolder, pages });
+
+    if (fs.readdirSync(pdfsFolder).length > 0) {
+      messagesHandler.success("Busca concluída", true);
+      await browser.close();
+      return;
+    }
+
+    pageCount++;
+  }
 
   await browser.close();
 })();
