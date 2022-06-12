@@ -96,7 +96,9 @@ function getNameFromPath(url) {
   }
 
   if (fs.readdirSync(pdfsFolder).length === 0) {
-    console.log("😔 Nenhum válido foi encontrado");
+    console.log("😔 Nenhum pdf válido foi encontrado");
+  } else {
+    console.log("✅ Busca finalizada com sucesso ");
   }
 
   await browser.close();
