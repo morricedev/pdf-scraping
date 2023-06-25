@@ -69,7 +69,7 @@ async function downloadPdfs(pdfs) {
 
 async function removeFiles({ files, folder, pages }) {
   for (const file of files) {
-    messagesHandler.error(`${file.name} inválido`);
+    messagesHandler.error(`${file.name} inválido, removendo ...`);
 
     try {
       const data = await pdf(file.file);
@@ -79,7 +79,7 @@ async function removeFiles({ files, folder, pages }) {
       }
     } catch (error) {
       messagesHandler.error(
-        `Ocorreu um erro ao remover o arquivo${file.name} `
+        `Ocorreu um erro ao remover o arquivo ${file.name} `
       );
     }
   }

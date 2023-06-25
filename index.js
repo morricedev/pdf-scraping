@@ -40,8 +40,23 @@ const searchFor = `${search} filetype:pdf`;
   const page = await browser.newPage();
 
   await page.goto(baseUrl);
-  await page.type('input[name="q"]', searchFor);
-  await page.click('input[name="q"]');
+
+  try {
+    await page.type('input[name="q"]', searchFor);
+    await page.click('input[name="q"]');
+  } catch (error) {
+    messagesHandler.error(
+      "Input de busca não foi detectado, tentando outra alternativa ..."
+    );
+    try {
+      await page.type('textarea[name="q"]', searchFor);
+      await page.click('textarea[name="q"]');
+    } catch (error) {
+      messagesHandler.error(
+        "Input de busca não foi detectado, por favor entre em contato com o autor do pacote."
+      );
+    }
+  }
 
   await Promise.all([page.waitForNavigation(), page.keyboard.press("Enter")]);
 
